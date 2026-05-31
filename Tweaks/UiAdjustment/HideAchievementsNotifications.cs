@@ -1,4 +1,4 @@
-﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.Config;
 using Dalamud.Interface.Colors;
@@ -11,6 +11,7 @@ namespace SimpleTweaksPlugin.Tweaks.UiAdjustment;
 [TweakDescription("Completely hides the login/zone-in notification for achievements nearing completion.")]
 [TweakAuthor("Anna")]
 [TweakAutoConfig]
+[Changelog("1.15.0.5", "Fixed notification window appearing for a couple frames before being hidden.", Author = "Haselnussbomber")]
 public class HideAchievementsNotifications : UiAdjustments.SubTweak {
     public class Configs : TweakConfig {
         public bool HideLogIn = true;

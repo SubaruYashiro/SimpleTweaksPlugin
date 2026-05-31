@@ -17,6 +17,7 @@ namespace SimpleTweaksPlugin.Tweaks.UiAdjustment;
 [TweakAutoConfig]
 [TweakReleaseVersion("1.9.0.0")]
 [Changelog("1.10.8.0", "Once again fixed logic.")]
+[Changelog("1.15.0.5", "Fixed percentage not being displayed in some circumstances.")]
 public unsafe class ScenarioProgressionDisplay : UiAdjustments.SubTweak {
     private ScenarioTree? finalScenario;
     private readonly Dictionary<uint, ScenarioTree> expansionBegins = new();

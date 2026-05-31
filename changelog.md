@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.15.0.5
+***General Changes***
+- Fixed issues with some tweaks not saving their settings correctly.
+- Disabled metrics collection.
+
+***Tweak Changes***
+- **`Combo Timer`** - Fixed Dragoon's [Wheeling Thrust -> Drakesbane] combo not being correctly timed.
+
+- **`Hide Achievements Nearing Completion Notifications`** - Fixed notification window appearing for a couple frames before being hidden. *(Haselnussbomber)*
+
+- **`Scenario Progression Display`** - Fixed percentage not being displayed in some circumstances.
+
+- **`Track Outfits`** - Added option to ignore quality when checking if an item exists as part of an outfit.
+
+
 ## 1.14.1.2
 ***New Tweaks***
 - **`Armoire Tooltip for Glamour Dresser`** - Show a hint on the tooltip of items stored in the glamour dresser when they could be stored in armoire.
