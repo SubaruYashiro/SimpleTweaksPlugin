@@ -3,7 +3,6 @@ using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Interface.Colors;
@@ -347,7 +346,7 @@ public partial class SimpleTweaksPluginConfig : IPluginConfiguration {
             if (ImGui.Button(buttonText, new Vector2(-1, ImGui.GetItemRectSize().Y))) {
                 if (plugin.ErrorList.Count == 0 && !Changelog.HasNewChangelog) {
                     Common.OpenBrowser("https://ko-fi.com/Caraxi");
-                } else if (Changelog.HasNewChangelog) {
+                } else if (plugin.ErrorList.Count == 0) {
                     plugin.ChangelogWindow.IsOpen = true;
                 } else  {
                     plugin.ShowErrorWindow = true;
@@ -459,22 +458,6 @@ public partial class SimpleTweaksPluginConfig : IPluginConfiguration {
 
                 if (ImGui.BeginTabItem(Loc.Localize("General Options / TabHeader", "General Options") + $"###generalOptionsTab")) {
                     ImGui.BeginChild($"generalOptions-scroll", new Vector2(-1, -1));
-
-                    if (ImGui.Checkbox(Loc.Localize("General Options / Analytics Opt Out", "Opt out of metrics"), ref AnalyticsOptOut)) Save();
-                    
-                    #if DEBUG
-                    ImGui.SameLine();
-                    if (ImGui.Button("Report Metrics")) {
-                        MetricsService.ReportMetrics();
-                    }
-                    #endif
-                    
-                    
-                    ImGui.SameLine();
-                    ImGuiComponents.HelpMarker("Simple tweaks collects a list of enabled tweaks to give me an idea of which tweaks are being used. You can choose to opt out of this data collection and no information will be sent. No identifying information will be collected in any way.");
-
-                    ImGui.Separator();
-
                     if (ImGui.CollapsingHeader(Loc.Localize("General Options / Visible Category Tabs", "Visible Category Tabs") + $" ({tweakCategories.Count + (ShowAllTweaksTab ? 1 : 0) + (ShowEnabledTweaksTab ? 1 : 0)})###visibleCategoryTabs") ) {
                         ImGui.Indent();
 

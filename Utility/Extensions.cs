@@ -12,14 +12,16 @@ using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.System.String;
-using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using FFXIVClientStructs.Interop;
 using FFXIVClientStructs.STD;
 using Lumina.Excel;
+using Lumina.Excel.Sheets;
+using Lumina.Text.Payloads;
+using Lumina.Text.ReadOnly;
+using Newtonsoft.Json;
 using SimpleTweaksPlugin.Sheets;
 using SimpleTweaksPlugin.TweakSystem;
-using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
 
 namespace SimpleTweaksPlugin.Utility; 
 
@@ -49,10 +51,6 @@ public static class Extensions {
         } catch (Exception ex) {
             return $"<<{ex.Message}>>";
         }
-    }
-
-    public static SeString GetSeString(this Utf8String utf8String) {
-        return Common.ReadSeString(utf8String);
     }
 
     public static int GetStableHashCode(this string str)
@@ -178,14 +176,14 @@ public static class Extensions {
     
     public unsafe static string ValueString(this AtkValue v) {
         return v.Type switch {
-            ValueType.Int => $"{v.Int}",
-            ValueType.String => Marshal.PtrToStringUTF8(new IntPtr(v.String)),
-            ValueType.UInt => $"{v.UInt}",
-            ValueType.Bool => $"{v.Byte != 0}",
-            ValueType.Float => $"{v.Float}",
-            ValueType.Vector => "[Vector]",
-            ValueType.ManagedString => Marshal.PtrToStringUTF8(new IntPtr(v.String))?.TrimEnd('\0') ?? string.Empty,
-            ValueType.ManagedVector => "[Managed Vector]",
+            AtkValueType.Int => $"{v.Int}",
+            AtkValueType.String => Marshal.PtrToStringUTF8(new IntPtr(v.String)),
+            AtkValueType.UInt => $"{v.UInt}",
+            AtkValueType.Bool => $"{v.Byte != 0}",
+            AtkValueType.Float => $"{v.Float}",
+            AtkValueType.Vector => "[Vector]",
+            AtkValueType.ManagedString => Marshal.PtrToStringUTF8(new IntPtr(v.String))?.TrimEnd('\0') ?? string.Empty,
+            AtkValueType.ManagedVector => "[Managed Vector]",
             _ => $"Unknown Type: {v.Type}"
         } ?? string.Empty;
     }
@@ -211,11 +209,11 @@ public static class Extensions {
         return attribute != null;
     }
 
-    public static bool IsPressed(this AtkEventData.AtkMouseData.ModifierFlag modifierFlag) {
+    public static bool IsPressed(this ModifierFlag modifierFlag) {
         return 
-            Service.KeyState[VirtualKey.SHIFT] == modifierFlag.HasFlag(AtkEventData.AtkMouseData.ModifierFlag.Shift) &&
-            Service.KeyState[VirtualKey.MENU] == modifierFlag.HasFlag(AtkEventData.AtkMouseData.ModifierFlag.Alt) &&
-            Service.KeyState[VirtualKey.CONTROL] == modifierFlag.HasFlag(AtkEventData.AtkMouseData.ModifierFlag.Ctrl);
+            Service.KeyState[VirtualKey.SHIFT] == modifierFlag.HasFlag(ModifierFlag.Shift) &&
+            Service.KeyState[VirtualKey.MENU] == modifierFlag.HasFlag(ModifierFlag.Alt) &&
+            Service.KeyState[VirtualKey.CONTROL] == modifierFlag.HasFlag(ModifierFlag.Ctrl);
     }
 
 
@@ -226,4 +224,58 @@ public static class Extensions {
         return v;
     }
     
+    public static IEnumerable<string> GetCommands(this TextCommand command) {
+        if (!command.Command.IsEmpty) yield return command.Command.ExtractText();
+        if (!command.Alias.IsEmpty) yield return command.Alias.ExtractText();
+        if (!command.ShortCommand.IsEmpty) yield return command.ShortCommand.ExtractText();
+        if (!command.ShortAlias.IsEmpty) yield return command.ShortAlias.ExtractText();
+    }
+
+    public static string FirstWord(this string str) => string.Concat(str.TakeWhile(t => !char.IsWhiteSpace(t)));
+
+    extension(ReadOnlySeStringSpan self) {
+        public bool ContainsPayload(Predicate<ReadOnlySePayloadSpan> predicate) {
+            foreach (var p in self) {
+                if (predicate(p)) return true;
+            }
+        
+            return false;
+        }
+        
+        public bool ContainsDalamudLinkPayload(DalamudLinkPayload dalamudLinkPayload) {
+            return self.ContainsPayload(payload => {
+                try {
+                    if (payload.MacroCode != MacroCode.Link) return false;
+                    if (!payload.TryGetExpression(out var linkTypeExpression, out var commandIdExpression, out var extra1Expression, out var extra2Expression, out var compositeExpression)) return false;
+                    if (!linkTypeExpression.TryGetInt(out var linkType) || linkType != (int)Payload.EmbeddedInfoType.DalamudLink - 1) return false;
+                    if (!commandIdExpression.TryGetUInt(out var commandId)) return false;
+                    if (!extra1Expression.TryGetInt(out var extra1)) return false;
+                    if (!extra2Expression.TryGetInt(out var extra2)) return false;
+                    if (!compositeExpression.TryGetString(out var compositeString)) return false;
+                    var extraData = JsonConvert.DeserializeObject<string[]>(compositeString.ExtractText());
+                    if (extraData == null || extraData.Length < 2) return false;
+                    return commandId == dalamudLinkPayload.CommandId &&
+                           extra1 == dalamudLinkPayload.Extra1 &&
+                           extra2 == dalamudLinkPayload.Extra2 &&
+                           extraData[0] == dalamudLinkPayload.Plugin &&
+                           extraData[1] == dalamudLinkPayload.ExtraString;
+                } catch (Exception ex) {
+                    SimpleLog.Warning(ex);
+                    return false;
+                }
+            });
+        }
+    }
+
+    extension(Lumina.Text.SeStringBuilder builder) {
+        public Lumina.Text.SeStringBuilder AppendDalamudLinkPayload(DalamudLinkPayload payload) {
+            return builder.BeginMacro(MacroCode.Link)
+                .AppendIntExpression((int)Payload.EmbeddedInfoType.DalamudLink - 1)
+                .AppendUIntExpression(payload.CommandId)
+                .AppendIntExpression(payload.Extra1)
+                .AppendIntExpression(payload.Extra2)
+                .AppendStringExpression(JsonConvert.SerializeObject(new[] { payload.Plugin, payload.ExtraString }))
+                .EndMacro();
+        }
+    }
 }

@@ -2,9 +2,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Interface;
-using Dalamud.Utility;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Utility;
 using SimpleTweaksPlugin.Events;
 using SimpleTweaksPlugin.TweakSystem;
 using SimpleTweaksPlugin.Utility;
@@ -19,6 +19,8 @@ namespace SimpleTweaksPlugin.Tweaks.UiAdjustment;
 [Changelog("1.10.0.4", "Added a setting to ignore checkbox if it is ticked and fixed the tweak not working with desynthesis.")]
 [Changelog("1.10.0.0", "Added support for automatic aetherial reduction.")]
 [Changelog("1.9.2.1", "Added support for Blunderville exit dialog.")]
+[Changelog("1.8.5.0", "Added an option to default cursor to the checkbox when one exists.")]
+[TweakAutoConfig]
 public unsafe class AlwaysYes : UiAdjustments.SubTweak {
     public class Configs : TweakConfig {
         public bool SelectCheckBox = true;
@@ -41,7 +43,7 @@ public unsafe class AlwaysYes : UiAdjustments.SubTweak {
         public List<string> ExceptionsYesNo = new();
     }
 
-    public Configs Config { get; private set; }
+    [TweakConfig] public Configs Config { get; private set; }
 
     private string newException = string.Empty;
 
@@ -114,16 +116,8 @@ public unsafe class AlwaysYes : UiAdjustments.SubTweak {
         ImGui.Unindent();
 
         if (hasChanged) {
-            SaveConfig(Config);
+            RequestSaveConfig();
         }
-    }
-
-    protected override void Setup() {
-        AddChangelog("1.8.5.0", "Added an option to default cursor to the checkbox when one exists.");
-    }
-
-    protected override void Enable() {
-        Config = LoadConfig<Configs>() ?? new Configs();
     }
 
     [AddonPostSetup]
@@ -172,7 +166,7 @@ public unsafe class AlwaysYes : UiAdjustments.SubTweak {
                 if (Config.Lobby) SetFocusYes(args.Addon, 4);
                 return;
             case "LobbyDKTWorldList":
-                if (Config.Lobby) DelayedSetFocusYes(args.AddonName, 23);
+                if (Config.Lobby) DelayedSetFocusYes(args.AddonName, 25);
                 return;
             case "LobbyDKTCheckExec":
                 if (Config.Lobby) DelayedSetFocusYes(args.AddonName, 3);
@@ -275,10 +269,10 @@ public unsafe class AlwaysYes : UiAdjustments.SubTweak {
         var unitBase = (AtkUnitBase*)unitBaseAddress;
         if (Config.ExceptionsYesNo.Count == 0 || unitBase == null) return false;
 
-        var textNode = (AtkTextNode*)unitBase->UldManager.SearchNodeById(2);
+        var textNode = unitBase->GetTextNodeById(2);
         if (textNode == null) return false;
 
-        var text = Common.ReadSeString(textNode->NodeText).TextValue.ReplaceLineEndings(string.Empty);
+        var text = textNode->NodeText.AsReadOnlySeStringSpan().ExtractText().ReplaceLineEndings(string.Empty);
 
         return text != string.Empty && Config.ExceptionsYesNo.Any(val => text.Contains(val));
     }

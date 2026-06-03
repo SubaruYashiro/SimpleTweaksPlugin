@@ -2,11 +2,11 @@ using System;
 using Dalamud.Interface.Utility.Raii;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Utility;
 using Lumina.Excel.Sheets;
 using SimpleTweaksPlugin.Events;
 using SimpleTweaksPlugin.TweakSystem;
 using SimpleTweaksPlugin.Utility;
-using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
 
 namespace SimpleTweaksPlugin.Tweaks.UiAdjustment;
 
@@ -64,8 +64,8 @@ public unsafe class CustomDefaultQuantity : Tweak {
         if (atkUnitBase->AtkValuesCount < 7) return;
 
         var textValue = atkUnitBase->AtkValues + 6;
-        if (textValue->Type != ValueType.String) return;
-        var text = Common.ReadSeString(textValue->String)?.TextValue;
+        if (textValue->Type != AtkValueType.String) return;
+        var text = textValue->String.AsReadOnlySeStringSpan().ExtractText();
         if (string.IsNullOrEmpty(text)) return;
 
         var mode = text.Equals(textWithdraw) ? Config.Withdraw : text.Equals(textDeposit) ? Config.Deposit : null;
@@ -75,7 +75,7 @@ public unsafe class CustomDefaultQuantity : Tweak {
         var maxValue = atkUnitBase->AtkValues + 3;
         var defaultValue = atkUnitBase->AtkValues + 4;
 
-        if (minValue->Type != ValueType.UInt || maxValue->Type != ValueType.UInt || defaultValue->Type != ValueType.UInt) return;
+        if (minValue->Type != AtkValueType.UInt || maxValue->Type != AtkValueType.UInt || defaultValue->Type != AtkValueType.UInt) return;
 
         var min = minValue->UInt;
         var max = maxValue->UInt;

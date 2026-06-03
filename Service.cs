@@ -1,7 +1,5 @@
 ﻿
 using System.Diagnostics.CodeAnalysis;
-using Dalamud.Game;
-using Dalamud.Game.ClientState.Objects;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -35,6 +33,7 @@ public class Service {
     [PluginService] public static IContextMenu ContextMenu { get; private set; } = null!;
     [PluginService] public static INamePlateGui NamePlateGui { get; private set; } = null!;
     [PluginService] public static IPlayerState PlayerState { get; private set; } = null!;
+    [PluginService] public static ISeStringEvaluator SeStringEvaluator { get; private set; } = null!;
 
     public static NativeKeyState NativeKeyState { get; } = new();
 

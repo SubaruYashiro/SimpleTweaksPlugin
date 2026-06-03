@@ -5,8 +5,10 @@ using Dalamud.Memory;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Lumina.Text.ReadOnly;
 using SimpleTweaksPlugin.TweakSystem;
 using SimpleTweaksPlugin.Utility;
+using DetailKind = FFXIVClientStructs.FFXIV.Client.Enums.DetailKind;
 
 namespace SimpleTweaksPlugin.Tweaks;
 
@@ -21,6 +23,7 @@ public unsafe class TooltipTweaks : SubTweakManager<TooltipTweaks.SubTweak> {
         public virtual void OnGenerateActionTooltip(NumberArrayData* numberArrayData, StringArrayData* stringArrayData) { }
 
         protected static SeString? GetTooltipString(StringArrayData* stringArrayData, TooltipTweaks.ItemTooltipField field) => GetTooltipString(stringArrayData, (int)field);
+        protected static bool TryGetTooltipString(StringArrayData* stringArrayData, TooltipTweaks.ItemTooltipField field, out ReadOnlySeStringSpan readOnlySeStringSpan) => TryGetTooltipString(stringArrayData, (int)field, out readOnlySeStringSpan);
         protected static SeString? GetTooltipString(StringArrayData* stringArrayData, TooltipTweaks.ActionTooltipField field) => GetTooltipString(stringArrayData, (int)field);
 
         protected static SeString? GetTooltipString(StringArrayData* stringArrayData, int field) {
@@ -36,10 +39,37 @@ public unsafe class TooltipTweaks : SubTweakManager<TooltipTweaks.SubTweak> {
             }
         }
 
+        private static bool TryGetTooltipString(StringArrayData* stringArrayData, int field, out ReadOnlySeStringSpan readOnlySeStringSpan) {
+            try {
+                if (stringArrayData->Span.Length <= field) {
+                    readOnlySeStringSpan = default;
+                    return false;
+                }
+
+                var stringAddress = stringArrayData->Span[field];
+                if (!stringAddress.HasValue) {
+                    readOnlySeStringSpan = default;
+                    return false;
+                }
+
+
+                readOnlySeStringSpan = new ReadOnlySeStringSpan(stringAddress.AsSpan());
+                return true;
+            } catch (Exception ex) {
+                SimpleLog.Error(ex);
+                readOnlySeStringSpan = default;
+                return false;
+            }
+        }
+
         protected static void SetTooltipString(StringArrayData* stringArrayData, TooltipTweaks.ItemTooltipField field, SeString seString) {
             seString ??= new SeString();
             var bytes = seString.EncodeWithNullTerminator();
             stringArrayData->SetValue((int)field, bytes, false);
+        }
+
+        protected static void SetTooltipString(StringArrayData* stringArrayData, TooltipTweaks.ItemTooltipField field, ReadOnlySpan<byte> seString) {
+            stringArrayData->SetValue((int)field, seString, false);
         }
 
         protected static void SetTooltipString(StringArrayData* stringArrayData, TooltipTweaks.ActionTooltipField field, SeString seString) {
@@ -106,7 +136,7 @@ public unsafe class TooltipTweaks : SubTweakManager<TooltipTweaks.SubTweak> {
     }
 
     public class HoveredActionDetail {
-        public ActionKind Category;
+        public DetailKind Category;
         public uint Id;
         public int Flag;
         public bool IsLovmActionDetail;
@@ -116,7 +146,7 @@ public unsafe class TooltipTweaks : SubTweakManager<TooltipTweaks.SubTweak> {
 
     public static uint LastLoadedItem { get; private set; }
 
-    private void ActionHoveredDetour(AgentActionDetail* agent, ActionKind actionKind, uint actionId, int flag, bool isLovmActionDetail, int a6, int a7) {
+    private void ActionHoveredDetour(AgentActionDetail* agent, DetailKind actionKind, uint actionId, int flag, bool isLovmActionDetail, int a6, int a7) {
         HoveredAction.Category = actionKind;
         HoveredAction.Id = actionId;
         HoveredAction.Flag = flag;

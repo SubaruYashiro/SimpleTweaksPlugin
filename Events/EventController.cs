@@ -5,11 +5,10 @@ using System.Linq;
 using System.Reflection;
 using Dalamud.Game.Addon.Lifecycle;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
+using Dalamud.Game.Chat;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.Attributes;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using JetBrains.Annotations;
-using Lumina.Excel.Sheets;
 using SimpleTweaksPlugin.Debugging;
 using SimpleTweaksPlugin.TweakSystem;
 
@@ -49,6 +48,12 @@ public static unsafe class EventController {
             var s = new EventSubscriber { Tweak = tweak, Method = method, Kind = SubscriberKind.TerritoryChanged, };
             return s;
         }
+        
+        
+        public static EventSubscriber CreateLogMessageSubscriber(BaseTweak tweak, MethodInfo method) {
+            var s = new EventSubscriber { Tweak = tweak, Method = method, Kind = SubscriberKind.LogMessage, };
+            return s;
+        }
 
         public enum SubscriberKind {
             Unknown,
@@ -66,6 +71,7 @@ public static unsafe class EventController {
             AddonRefreshArgs,
             AddonReceiveEventArgs,
             TerritoryChanged,
+            LogMessage,
         }
 
         private bool IsAddonPointer(ParameterInfo p) {
@@ -167,7 +173,7 @@ public static unsafe class EventController {
             using var perfMon = PerformanceMonitor.Run($"[Event] {Tweak.Key} :: {Method.Name}");
 
             try {
-                var _ = Kind switch {
+                _ = Kind switch {
                     SubscriberKind.Invalid => null,
                     SubscriberKind.Unknown => null,
                     SubscriberKind.Framework => Method.Invoke(Tweak, []),
@@ -182,6 +188,7 @@ public static unsafe class EventController {
                     SubscriberKind.AddonRefreshArgs when args is AddonRefreshArgs addonRefreshArgs => Method.Invoke(Tweak, [addonRefreshArgs]),
                     SubscriberKind.AddonReceiveEventArgs when args is AddonReceiveEventArgs addonReceiveEventArgs => Method.Invoke(Tweak, [addonReceiveEventArgs]),
                     SubscriberKind.TerritoryChanged => Method.Invoke(Tweak, [args]),
+                    SubscriberKind.LogMessage => Method.Invoke(Tweak, [args]),
                     _ => null,
                 };
             } catch (Exception ex) {
@@ -195,6 +202,7 @@ public static unsafe class EventController {
     private static Dictionary<AddonEvent, Dictionary<string, List<EventSubscriber>>> AddonEventSubscribers { get; } = new();
     private static List<EventSubscriber> FrameworkUpdateSubscribers { get; } = [];
     private static List<EventSubscriber> TerritoryChangedSubscribers { get; } = [];
+    private static Dictionary<uint, List<EventSubscriber>> LogMessageSubscribers { get; } = [];
 
     private static bool TryGetCustomAttribute<T>(this MemberInfo element, [NotNullWhen(true)] out T? attribute) where T : Attribute {
         attribute = element.GetCustomAttribute<T>();
@@ -227,6 +235,24 @@ public static unsafe class EventController {
                 }
 
                 TerritoryChangedSubscribers.Add(subscriber);
+            }
+
+            if (method.TryGetCustomAttribute<LogMessageAttribute>(out var logMessageAttribute)) {
+                var subscriber = EventSubscriber.CreateLogMessageSubscriber(tweak, method);
+
+                if (LogMessageSubscribers.Count == 0) {
+                    Service.Chat.LogMessage -= HandleLogMessage;
+                    Service.Chat.LogMessage += HandleLogMessage;
+                }
+
+                foreach (var id in logMessageAttribute.LogMessageIds) {
+                    if (!LogMessageSubscribers.TryGetValue(id, out var subscribers)) {
+                        subscribers = [];
+                        LogMessageSubscribers.TryAdd(id, subscribers);
+                    }
+                    
+                    subscribers.Add(subscriber);
+                }
             }
 
             foreach (var attr in method.GetCustomAttributes<AddonEventAttribute>()) {
@@ -289,9 +315,17 @@ public static unsafe class EventController {
         }
     }
 
-    private static void HandleTerritoryChanged(ushort newTerritory) {
+    private static void HandleTerritoryChanged(uint newTerritory) {
         foreach (var tcSubscriber in TerritoryChangedSubscribers) {
             tcSubscriber.Invoke(newTerritory);
+        }
+    }
+
+    private static void HandleLogMessage(ILogMessage logMessage) {
+        if (LogMessageSubscribers.TryGetValue(logMessage.LogMessageId, out var subscribers)) {
+            foreach (var subscriber in subscribers) {
+                subscriber.Invoke(logMessage);
+            }
         }
     }
 
@@ -323,6 +357,24 @@ public static unsafe class EventController {
         TerritoryChangedSubscribers.RemoveAll(f => f.Tweak == tweak);
         if (TerritoryChangedSubscribers.Count == 0) {
             Service.ClientState.TerritoryChanged -= HandleTerritoryChanged;
+        }
+
+        if (TerritoryChangedSubscribers.Count == 0) {
+            Service.ClientState.TerritoryChanged -= HandleTerritoryChanged;
+        }
+        
+        HashSet<uint> emptyLogMessages = [];
+        foreach (var (id, subscribers) in LogMessageSubscribers) {
+            subscribers.RemoveAll(f => f.Tweak == tweak);
+            if (subscribers.Count == 0) emptyLogMessages.Add(id);
+        }
+
+        foreach (var id in emptyLogMessages) {
+            LogMessageSubscribers.Remove(id);
+        }
+
+        if (LogMessageSubscribers.Count == 0) {
+            Service.Chat.LogMessage -= HandleLogMessage;
         }
 
         foreach (var (_, addonSubscribers) in AddonEventSubscribers) {

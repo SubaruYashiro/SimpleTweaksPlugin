@@ -8,38 +8,29 @@ using System.Numerics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using Dalamud.Game.Text.SeStringHandling;
-using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.IoC;
 using Dalamud.Networking.Http;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.Attributes;
-using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
-using FFXIVClientStructs.FFXIV.Client.UI.Shell;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using FFXIVClientStructs.Interop;
-using KamiToolKit;
-using Lumina.Excel.Sheets;
 using SimpleTweaksPlugin.Debugging;
-using SimpleTweaksPlugin.Enums;
 using Action = System.Action;
-using ValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
 
 namespace SimpleTweaksPlugin.Utility;
 
 public unsafe class Common {
     [PluginService] private static IGameInteropProvider ImNotGonnaCallItThat { get; set; } = null!;
 
-    private static IntPtr LastCommandAddress;
-
-    public static Utf8String* LastCommand { get; private set; }
+    private static Utf8String* _lastCommand;
+    public static string LastCommand => _lastCommand == null || _lastCommand->StringPtr.Value == null ? string.Empty : _lastCommand->ToString();
 
     public static uint ClientStructsVersion => CsVersion.Value;
-    private static readonly Lazy<uint> CsVersion = new(() => (uint?)typeof(FFXIVClientStructs.ThisAssembly).Assembly.GetName().Version?.Build ?? 0U);
+    private static readonly Lazy<uint> CsVersion = new(() => (uint?)typeof(FFXIVClientStructs.ThisAssembly).Assembly.GetName().Version?.MinorRevision ?? 0U);
     
     public static event Action FrameworkUpdate;
 
@@ -60,10 +51,8 @@ public unsafe class Common {
     public static void* ThrowawayOut { get; private set; } = (void*)Marshal.AllocHGlobal(1024);
 
     public static void Setup() {
-        LastCommandAddress = Service.SigScanner.GetStaticAddressFromSig("4C 8D 05 ?? ?? ?? ?? 49 8B D4 48 8B C8 E8 ?? ?? ?? ?? 83 EB 06");
-        LastCommand = (Utf8String*)(LastCommandAddress);
-
-        updateCursorHook = Hook<AtkModuleUpdateCursor>("48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 4C 8B F1 E8 ?? ?? ?? ?? 49 8B CE", UpdateCursorDetour);
+        _lastCommand = (Utf8String*) Service.SigScanner.GetStaticAddressFromSig("4C 8D 05 ?? ?? ?? ?? 49 8B D4 48 8B C8 E8 ?? ?? ?? ?? 83 EB 06");
+        updateCursorHook = Hook<AtkUnitManager.Delegates.UpdateCursor>(AtkUnitManager.Addresses.UpdateCursor.Value, UpdateCursorDetour);
         updateCursorHook?.Enable();
     }
 
@@ -80,7 +69,7 @@ public unsafe class Common {
 
     public static T* GetUnitBase<T>(string? name = null, int index = 1) where T : unmanaged {
         if (string.IsNullOrEmpty(name)) {
-            var attr = (AddonAttribute?) typeof(T).GetCustomAttribute(typeof(AddonAttribute));
+            var attr = typeof(T).GetCustomAttribute<AddonAttribute>();
             if (attr != null) {
                 name = attr.AddonIdentifiers.FirstOrDefault();
             }
@@ -106,34 +95,10 @@ public unsafe class Common {
         return unitBase != null;
     }
 
-    public static SeString? ReadSeString(byte** startPtr) {
-        if (startPtr == null) return null;
-        var start = *(startPtr);
-        if (start == null) return null;
-        return ReadSeString(start);
-    }
-
-    public static SeString ReadSeString(byte* ptr) {
-        var offset = 0;
-        while (true) {
-            var b = *(ptr + offset);
-            if (b == 0) {
-                break;
-            }
-
-            offset += 1;
-        }
-
-        var bytes = new byte[offset];
-        Marshal.Copy(new IntPtr(ptr), bytes, 0, offset);
-        return SeString.Parse(bytes);
-    }
-
-    public static SeString ReadSeString(Utf8String xivString) => SeString.Parse(xivString);
-    
     public static HookWrapper<T> Hook<T>(string signature, T detour, int addressOffset = 0) where T : Delegate {
         var addr = Service.SigScanner.ScanText(signature);
         var h = ImNotGonnaCallItThat.HookFromAddress(addr + addressOffset, detour);
+        
         var wh = new HookWrapper<T>(h);
         HookList.Add(wh);
         return wh;
@@ -174,23 +139,23 @@ public unsafe class Common {
                 var v = values[i];
                 switch (v) {
                     case uint uintValue:
-                        atkValues[i].Type = ValueType.UInt;
+                        atkValues[i].Type = AtkValueType.UInt;
                         atkValues[i].UInt = uintValue;
                         break;
                     case int intValue:
-                        atkValues[i].Type = ValueType.Int;
+                        atkValues[i].Type = AtkValueType.Int;
                         atkValues[i].Int = intValue;
                         break;
                     case float floatValue:
-                        atkValues[i].Type = ValueType.Float;
+                        atkValues[i].Type = AtkValueType.Float;
                         atkValues[i].Float = floatValue;
                         break;
                     case bool boolValue:
-                        atkValues[i].Type = ValueType.Bool;
+                        atkValues[i].Type = AtkValueType.Bool;
                         atkValues[i].Byte = (byte)(boolValue ? 1 : 0);
                         break;
                     case string stringValue: {
-                        atkValues[i].Type = ValueType.String;
+                        atkValues[i].Type = AtkValueType.String;
                         var stringBytes = Encoding.UTF8.GetBytes(stringValue);
                         var stringAlloc = Marshal.AllocHGlobal(stringBytes.Length + 1);
                         Marshal.Copy(stringBytes, 0, stringAlloc, stringBytes.Length);
@@ -216,7 +181,7 @@ public unsafe class Common {
             unitBase->FireCallback((uint)values.Length, atkValues);
         } finally {
             for (var i = 0; i < values.Length; i++) {
-                if (atkValues[i].Type == ValueType.String) {
+                if (atkValues[i].Type == AtkValueType.String) {
                     Marshal.FreeHGlobal(new IntPtr(atkValues[i].String));
                 }
             }
@@ -243,7 +208,7 @@ public unsafe class Common {
             return eventObject;
         } finally {
             for (var i = 0; i < eventParams.Length; i++) {
-                if (atkValues[i].Type == ValueType.String) {
+                if (atkValues[i].Type == AtkValueType.String) {
                     Marshal.FreeHGlobal(new IntPtr(atkValues[i].String));
                 }
             }
@@ -384,23 +349,20 @@ public unsafe class Common {
         return (T*)GetAgent(attr.Id);
     }
 
-    private delegate void* AtkModuleUpdateCursor(RaptureAtkModule* module);
-
-    private static HookWrapper<AtkModuleUpdateCursor> updateCursorHook;
-
+    private static HookWrapper<AtkUnitManager.Delegates.UpdateCursor> updateCursorHook;
     private static AtkCursor.CursorType _lockedCursorType = AtkCursor.CursorType.Arrow;
 
-    private static void* UpdateCursorDetour(RaptureAtkModule* module) {
+    private static void UpdateCursorDetour(AtkUnitManager* module) {
         if (_lockedCursorType != AtkCursor.CursorType.Arrow) {
             var cursor = AtkStage.Instance()->AtkCursor;
             if (cursor.Type != _lockedCursorType) {
-                AtkStage.Instance()->AtkCursor.SetCursorType(_lockedCursorType, 1);
+                AtkStage.Instance()->AtkCursor.SetCursorType(_lockedCursorType, true);
             }
 
-            return null;
+            return;
         }
 
-        return updateCursorHook.Original(module);
+        updateCursorHook.Original(module);
     }
 
     public static void ForceMouseCursor(AtkCursor.CursorType cursorType) {
